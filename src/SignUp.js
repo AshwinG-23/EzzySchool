@@ -121,6 +121,14 @@ export default function SignUp() {
               <Text className="text-white text-center text-lg">Sign Up</Text>
             </TouchableOpacity>
           </View>
+          <View className="">
+            <TouchableOpacity
+              className="py-3 rounded-2xl"
+              onPress={() => navigation.navigate('SignIn')}
+            >
+              <Text className="text-black text-center text-s">Already a user?</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </View>

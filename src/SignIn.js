@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { View, Text, Image, TextInput, TouchableOpacity, Alert } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import splash from '../assets/Splash.png';
 import { useNavigation } from '@react-navigation/native';
+import { ClassContext } from './components/globalClassContext';
 
 export default function SignIn() {
   const navigation = useNavigation();
+  const { fetchClasses } = useContext(ClassContext);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,6 +26,7 @@ export default function SignIn() {
       .then((userCredential) => {
         setLoading(false);
         Alert.alert('Success', 'Signed in successfully');
+        fetchClasses(userCredential.user.uid);
         navigation.navigate('HomeMain');
       })
       .catch((error) => {
@@ -75,13 +79,9 @@ export default function SignIn() {
             />
           </View>
 
-          <View>
-            <TouchableOpacity
-              className="absolute right-0 top-0  mt-1"
-            >
-              <Text className="text-blue-500 text-sm">Forgot Password?</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity className="mt-2">
+            <Text className="text-blue-500 self-end text-sm">Forgot Password?</Text>
+          </TouchableOpacity>
 
           <View className="mt-12">
             <TouchableOpacity
@@ -94,10 +94,7 @@ export default function SignIn() {
           </View>
 
           <View className="">
-            <TouchableOpacity
-              className="py-3 rounded-2xl"
-              onPress={() => navigation.navigate('SignUp')}
-            >
+            <TouchableOpacity className="py-3 rounded-2xl" onPress={() => navigation.navigate('SignUp')}>
               <Text className="text-black text-center text-s">Not a User? Sign Up!</Text>
             </TouchableOpacity>
           </View>

@@ -1,74 +1,102 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Modal, TextInput, Alert } from 'react-native';
-import firestore from '@react-native-firebase/firestore';
+import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
+import { ScrollView } from 'react-native-gesture-handler';
+import { ClassContext } from '../components/globalClassContext';
+import { useNavigation } from '@react-navigation/native';
 
 export default function HomeScreen() {
-  const [classes, setClasses] = useState([]);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [modalVisibleJoin, setmodalVisibleJoin] = useState(false);
+  const [modalVisibleCreate, setmodalVisibleCreate] = useState(false);
   const [className, setClassName] = useState('');
+  const [classCode, setClassCode] = useState('');
   const [description, setDescription] = useState('');
-  const [generatedCode, setGeneratedCode] = useState('');
-  const [userId, setUserId] = useState(null); 
-
+  const [userId, setUserId] = useState(null);
+  const [classData, setClassData] = useState([]);
+  const { classes, fetchClasses } = useContext(ClassContext);
+  const navigation = useNavigation();
+  let generatedCode
 
   useEffect(() => {
     const currentUser = auth().currentUser;
     if (currentUser) {
       setUserId(currentUser.uid);
     }
+    fetchClassDetails();
   }, []);
 
-  useEffect(() => {
-    if (userId) {
-      const fetchClasses = async () => {
-        const userSnapshot = await firestore().collection('users').doc(userId).get();
-        const userData = userSnapshot.data();
-
-        if (userData.classes) {
-          const classPromises = userData.classes.map(classId =>
-            firestore().collection('classes').doc(classId).get()
-          );
-          const classSnapshots = await Promise.all(classPromises);
-          const classData = classSnapshots.map(doc => ({ id: doc.id, ...doc.data() }));
-          setClasses(classData);
-        }
-      };
-
-      fetchClasses();
+  const fetchClassDetails = async () => {
+    try {
+      const updatedClasses = await Promise.all(
+        classes.map(async (item) => {
+          const teacherDoc = await firestore().collection('users').doc(item.teacherId).get();
+          const teacherName = teacherDoc.exists ? teacherDoc.data().name : 'Unknown';
+          return { ...item, teacherName };
+        })
+      );
+      setClassData(updatedClasses);
+    } catch (error) {
+      console.error("Error fetching class details: ", error);
     }
-  }, [userId]);
+  };
 
   const generateClassCode = () => {
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase(); // Generates a 6-char random string
-    setGeneratedCode(code);
+    let code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    return code;
+  };
+
+  const joinClass = async () => {
+    if (!classCode) {
+      Alert.alert('Error', 'Please enter a code');
+      return;
+    }
+
+    try {
+      await firestore().collection('classes').doc(classCode).update({
+        participants: firestore.FieldValue.arrayUnion(userId),
+      });
+      await firestore().collection('users').doc(userId).update({
+        classes: firestore.FieldValue.arrayUnion(classCode),
+      });
+      setClassCode('');
+      fetchClasses(userId);
+      setmodalVisibleJoin(false);
+    } catch (error) {
+      if (error.code === 'firestore/not-found') {
+        Alert.alert('Error', 'Classroom does not exist');
+      } else {
+        Alert.alert('Error', error.message);
+      }
+    }
   };
 
   const createClass = async () => {
+    generatedCode = generateClassCode();
+
     if (!className || !description) {
       Alert.alert('Error', 'Please fill all fields');
       return;
     }
 
-    generateClassCode();
-
     try {
-      const newClassRef = await firestore().collection('classes').add({
+      await firestore().collection('classes').doc(generatedCode).set({
         className: className,
         description: description,
+        code: generatedCode,
         teacherId: userId,
-        participants: [userId], 
+        participants: [userId],
       });
 
       await firestore().collection('users').doc(userId).update({
-        classes: firestore.FieldValue.arrayUnion(newClassRef.id),
+        classes: firestore.FieldValue.arrayUnion(generatedCode),
       });
 
-      setClasses([...classes, { id: newClassRef.id, className, description, participants: [userId] }]);
-      setModalVisible(false);
+      setmodalVisibleCreate(false);
       Alert.alert('Class Created', `Class Code: ${generatedCode}`);
       setClassName('');
       setDescription('');
+      fetchClasses(userId);
     } catch (error) {
       Alert.alert('Error', error.message);
     }
@@ -76,24 +104,72 @@ export default function HomeScreen() {
 
   return (
     <View className="flex-1 bg-white">
-      <FlatList
-        data={classes}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View className="p-4 border-b border-gray-300">
-            <Text className="text-xl font-bold">{item.className}</Text>
-            <Text className="text-gray-500">{item.description}</Text>
-          </View>
-        )}
-      />
-
-      {/* Modal for creating a new class */}
+      <Text className="m-4 mb-0 text-black text-xl">Your Classes</Text>
+      <ScrollView>
+        {classData.map((item) => (
+          <TouchableOpacity
+            key={item.id}
+            onPress={() =>
+              navigation.navigate('ClassroomHome', {
+                classId: item.id,
+                className: item.className,
+                description: item.description,
+                userId: userId,
+                teacherId: item.teacherId,
+              })
+            }
+            className="p-4 flex-row bg-red-100 rounded-lg shadow-md m-3 items-center">
+            <View className="flex-1">
+              <Text className="text-black text-xl m-2 font-semibold">{item.className}</Text>
+              <Text className="text-gray-700 m-2 mb-0 text-s">Teacher: {item.teacherName}</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      
       <Modal
         animationType="slide"
         transparent={true}
-        visible={modalVisible}
+        visible={modalVisibleJoin}
         onRequestClose={() => {
-          setModalVisible(!modalVisible);
+          setmodalVisibleJoin(!modalVisibleJoin);
+        }}>
+        <View className="flex-1 justify-center items-center bg-black bg-opacity-50">
+          <View className="bg-white p-5 rounded-lg w-4/5">
+            <Text className="text-lg font-bold mb-4">Join a Class</Text>
+            <TextInput
+              className="border border-gray-300 text-black text-lg rounded-md px-3 py-2 mb-3"
+              placeholder="Class Code"
+              value={classCode}
+              onChangeText={setClassCode}
+            />
+            <View className="flex-row justify-between mt-1">
+              <TouchableOpacity
+                className="bg-customPurple py-2 px-4 rounded-lg"
+                onPress={joinClass}>
+                <Text className="text-white">Join Class</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="bg-gray-300 py-2 px-4 rounded-lg"
+                onPress={() => setmodalVisibleJoin(false)}>
+                <Text className="text-black">Cancel</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+                className="py-2 px-4 rounded-lg self-center"
+                onPress={() => {setmodalVisibleCreate(true); setmodalVisibleJoin(false);}}>
+                <Text className="text-black">Want to create your own class?</Text>
+              </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisibleCreate}
+        onRequestClose={() => {
+          setmodalVisibleCreate(!modalVisibleCreate);
         }}>
         <View className="flex-1 justify-center items-center bg-black bg-opacity-50">
           <View className="bg-white p-5 rounded-lg w-4/5">
@@ -121,7 +197,7 @@ export default function HomeScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 className="bg-gray-300 py-2 px-4 rounded-lg"
-                onPress={() => setModalVisible(false)}>
+                onPress={() => setmodalVisibleCreate(false)}>
                 <Text className="text-black">Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -131,7 +207,7 @@ export default function HomeScreen() {
 
       <TouchableOpacity
         className="absolute bottom-10 right-10 bg-customPurple p-4 rounded-full"
-        onPress={() => setModalVisible(true)}>
+        onPress={() => setmodalVisibleJoin(true)}>
         <Text className="text-white text-lg">+</Text>
       </TouchableOpacity>
     </View>
